@@ -302,6 +302,70 @@ void motorSpeedControl() {
     }
 }
 
+// For Donkey car, we need to move forward and turn at the same time
+// In order to do this, we have to differentially change the speed of inner or
+// outer wheels.
+
+// For a right turn, the inner (right) wheels move slower than the outer (left)
+// Rather than increase speed which may exceed maxPWM, we will cut speed of
+// the wheel in the direction of the turn
+
+// The amount of speed to cut will depend on the angle.  It should not be
+// proportional to the speed of the wheels, because that would result in faster
+// turns when the speed is greater
+
+// Therefore, we will cut the speed of the inner wheel by an amount proportional
+// to the turn angle.  This will have to be calibrated
+
+void moveAndTurn() {
+
+    // Define a constant factor for turning speed reduction 
+    float turnFactor = 0.5;  //joyX of 100 will reduce by 100*turnfactor
+    //  Check if we are too close to an obstacle and stop
+    if (distanceInCm < STOP_DISTANCE || distanceInCmBack < STOP_DISTANCE) {
+      halt();
+    }
+    // Check if angle is almost zero. If zero, then just go fwd or reverse
+    if (joyX >= -10 && joyX <= 10) { 
+      if (joyY > 0) {  // go forward
+        multiplier = (distanceInCm - STOP_DISTANCE)/STOP_DISTANCE;
+        motorSpeed = motorSpeed * multiplier;
+        if (motorSpeed > 0)       forward(motorSpeed);
+        Serial.println("Going fwd");
+      }
+      if (joyY < 0) {  // go reverse
+        multiplier = (distanceInCmBack - STOP_DISTANCE)/STOP_DISTANCE;
+        motorSpeed = motorSpeed * multiplier;
+        if (motorSpeed > 0)       reverse(motorSpeed);
+        Serial.println("Going reverse");
+      }
+    }
+    // For non-zero angles, reduce inner wheel speed
+    else if (joyX > 10) { // turn right
+      if (joyY > 0) {  // go forward
+        multiplier = (distanceInCm - STOP_DISTANCE)/STOP_DISTANCE;
+        motorSpeed = motorSpeed * multiplier;
+        if (motorSpeed > 0) {
+		// TBD, right wheel should be motorSpeed*joyX*turnFactor;
+        }
+        Serial.println("Going fwd right");
+      }
+    }
+    else if (joyX < -10) { // turn left
+      if (joyY < 0) { // go reverse
+        multiplier = (distanceInCm - STOP_DISTANCE)/STOP_DISTANCE;
+        motorSpeed = motorSpeed * multiplier;
+        if (motorSpeed > 0) {
+		// TBD, right wheel should be motorSpeed*joyX*turnFactor;
+        }
+    }
+    else
+    {
+        halt();
+    }
+}
+
+
 void motorRotationControl()
 {
   static int lastY;
