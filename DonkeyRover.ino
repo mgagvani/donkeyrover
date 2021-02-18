@@ -11,6 +11,9 @@
 
 // Arduino pin #10 to TX Bluetooth module
 // Arduino pin #11 to RX Bluetooth module
+// Arduino pin #16 to TX - Level Translator - Pi
+// Arduino pin #17 to RX - Level Translator - Pi
+// Pins 16 and 17 correspond with hardware Serial2
 
 #define    STX          0x02
 #define    ETX          0x03
@@ -18,12 +21,12 @@
 #define    FAST         250                             // Datafields refresh rate (ms)
 
 SoftwareSerial mySerial(10,11);                           // BlueTooth module.  Mega can only receive on pins 10,11
-byte cmd[8] = {0, 0, 0, 0, 0, 0, 0, 0};                 // bytes received
+byte cmd[8] = {0, 0, 0, 0, 0, 0, 0, 0};                 // bytes received from Bluetooth
 byte buttonStatus = 0;                                  // first Byte sent to Android device
 long previousMillis = 0;                                // will store last time Buttons status was updated
 long sendInterval = SLOW;                               // interval between Buttons status transmission (milliseconds)
 String displayStatus = "xxxx";      // message to Android device
-int joyX, joyY, lastY;                     // Joystick X,Y position
+int joyX, joyY, lastY;                     // Joystick X,Y position  
 
 // Define ultrasonic library
 #define TRIGGER_PIN 7
@@ -31,7 +34,7 @@ int joyX, joyY, lastY;                     // Joystick X,Y position
 #define TRIGGER_BACK_PIN 9
 #define ECHO_BACK_PIN 31
 #define MAX_DISTANCE 256
-#define STOP_DISTANCE 20 
+#define STOP_DISTANCE 5 
 
 int distanceInCm = MAX_DISTANCE;
 int distanceInCmBack = MAX_DISTANCE;
@@ -88,6 +91,7 @@ void setup() {  // Setup runs once per reset
   // initialize serial communication @ 115200 baud:
   Serial.begin(115200);
   mySerial.begin(9600);  // Bluetooth comms
+  Serial2.begin(115200); // Pi 4 comms
   //Define L298N Dual H-Bridge Motor Controller Pins
 
   pinMode(fwFR,OUTPUT);
@@ -130,8 +134,7 @@ void setup() {  // Setup runs once per reset
   
   while(mySerial.available())  mySerial.read();         // empty RX buffer
   Serial.print("Max PWM = ");
-  Serial.println(maxPWM);
-  
+  Serial.println(maxPWM);   
 }
   
 
@@ -144,8 +147,9 @@ void loop() {
   distanceInCmBack =  (distanceInCmBack + currentDistanceBack)/2;
   // Serial.println(distanceInCm);        // Debug only
   // Serial.println(distanceInCmBack);  // Debug only
-  delay(2);
-  if(mySerial.available())  {                           // data received from tablet
+  delay(10);
+
+  if(mySerial.available())  {                           // data received from BT
     delay(2);
     cmd[0] =  mySerial.read();
     //Serial.println("Received data");  // Debug only
@@ -164,6 +168,49 @@ void loop() {
     }
   } 
   else moveMotors();
+/*
+
+  if(Serial2.available())  {                           // data received from BT
+    delay(10);
+    cmd[0] =  Serial2.read();
+    //Serial.println("Received data");  // Debug only
+    if(cmd[0] == STX)  {
+      int i=1;      
+      while(Serial2.available())
+      {
+        delay(1);
+        cmd[i] = Serial2.read();
+        if(cmd[i]>127 || i>7)                 break;     // Communication error
+        if((cmd[i]==ETX) && (i==2 || i==7))   break;     // Button or Joystick data
+        i++;        
+      }
+      if     (i==2)          getButtonState(cmd[1]);    // 3 Bytes  ex: < STX "C" ETX >
+      else if(i==7)          getJoystickState(cmd);     // 6 Bytes  ex: < STX "200" "180" ETX >
+    }
+  } 
+  else moveMotors();
+*/
+  if(Serial2.available()>7)  {                           // data received from BT
+      cmd[0] =  Serial2.read();
+      Serial.println("Received data");  // Debug only
+      if(cmd[0] == STX)  {
+        int i=1;      
+        while(Serial2.available() && i<8)
+        {
+          cmd[i] = Serial2.read();
+          if(cmd[i]>127 || i>7)                 break;     // Communication error
+          if((cmd[i]==ETX) && (i==7))   break;     // Button or Joystick data
+          i++;        
+        }
+        if(i==7) {
+          while (Serial2.available()) {
+            Serial2.read();
+          }
+          getJoystickState(cmd);     // 6 Bytes  ex: < STX "200" "180" ETX >
+        }
+      }
+    } 
+    else moveMotors();
     
   // sendBlueToothData();
   
@@ -220,16 +267,18 @@ void getJoystickState(byte data[8])    {
   x = x - 200;                                                  // Offset to avoid
   y = y - 200;                                                  // transmitting negative numbers
   // all the intermediate values will be ignored
-  if (x > 10 || x < -10) joyX = x;
-  if (y > 10 || y < -10) joyY = y;
-  if (x == 0) joyX = x;
-  if (y == 0) joyY = y;
+  // if (x > 10 || x < -10) joyX = x;
+  // if (y > 10 || y < -10) joyY = y;
+  // if (x == 0) joyX = x;
+  // if (y == 0) joyY = y;
+  joyX = x;
+  joyY = y;
 
 // Your code here ...
-  //Serial.print("Joystick position:  ");
-  //Serial.print(joyX);  
-  //Serial.print(", ");  
-  //Serial.println(joyY);
+  Serial.print("Joystick position:  ");
+  Serial.print(joyX);  
+  Serial.print(", ");  
+  Serial.println(joyY);
  
 } 
 
@@ -328,7 +377,8 @@ void motorSpeedControl() {
 // Therefore, we will cut the speed of the inner wheel by an amount proportional
 // to the turn angle.  This will have to be calibrated
 
-//Move and turn mode is triggered by button #6
+// Move and turn mode is triggered by button #6
+// It is always on when used with Donkey
 
 void moveAndTurn() {
     
@@ -345,11 +395,11 @@ void moveAndTurn() {
     //} 
     float fwdMultiplier = 1;  // Initialize fwd multiplier
     float backMultiplier = 1; // Initialize back multiplier
-    if (distanceInCm >= STOP_DISTANCE) fwdMultiplier = 1; 
-    else if (distanceInCm < STOP_DISTANCE) fwdMultiplier = 0;
+    // if (distanceInCm >= STOP_DISTANCE) fwdMultiplier = 1; 
+    // else if (distanceInCm < STOP_DISTANCE) fwdMultiplier = 0;
 
-    if (distanceInCmBack >= STOP_DISTANCE) backMultiplier = 1; 
-    else if (distanceInCmBack < STOP_DISTANCE) backMultiplier = 0;
+    // if (distanceInCmBack >= STOP_DISTANCE) backMultiplier = 1; 
+    // else if (distanceInCmBack < STOP_DISTANCE) backMultiplier = 0;
 
     //Serial.print(fwdMultiplier);
     //Serial.print("<>");
@@ -372,37 +422,41 @@ void moveAndTurn() {
       Serial.println(motorSpeed);
     }
     */
+    if (joyY < 5 && joyY > -5) {
+      halt();
+      return;
+    }
     // For non-zero angles, reduce inner wheel speed
     if (joyX >= 0) { // turn right or stop
       if (joyY < 0) { // go reverse
         //multiplier = (distanceInCmBack - STOP_DISTANCE)/STOP_DISTANCE;
         motorSpeed = motorSpeed * backMultiplier;
-        turnMotorSpeed = motorSpeed-abs(joyX)*turnFactor;
+        turnMotorSpeed = motorSpeed-abs(joyX)*motorSpeed/100;
         if (motorSpeed > 0) {
           moveFL(3, motorSpeed);
           moveFR(3, turnMotorSpeed);
           moveBL(3, motorSpeed);
           moveBR(3, turnMotorSpeed);
         }
-        //Serial.println("Going reverse right");
-        //Serial.println(motorSpeed);
-        //Serial.println(turnMotorSpeed);
-        //Serial.println("");
+        // Serial.println("Going reverse right");
+        // Serial.println(motorSpeed);
+        // Serial.println(turnMotorSpeed);
+        // Serial.println("");
       } 
       else if (joyY > 0) {  // go forward
         //multiplier = (distanceInCm - STOP_DISTANCE)/STOP_DISTANCE;
         motorSpeed = motorSpeed * fwdMultiplier;
-        turnMotorSpeed = motorSpeed-abs(joyX)*turnFactor;
+        turnMotorSpeed = motorSpeed-abs(joyX)*motorSpeed/100;
         if (motorSpeed > 0) {
 		      moveFL(1, motorSpeed);
           moveFR(1, turnMotorSpeed);
           moveBL(1, motorSpeed);
           moveBR(1, turnMotorSpeed);
         }
-        //Serial.println("Going fwd right");
-        //Serial.println(motorSpeed);
-        //Serial.println(turnMotorSpeed);
-        //Serial.println("");
+        // Serial.println("Going fwd right");
+        // Serial.println(motorSpeed);
+        // Serial.println(turnMotorSpeed);
+        // Serial.println("");
       }
       else { // stop condition
         halt();
@@ -412,32 +466,32 @@ void moveAndTurn() {
       if (joyY < 0) { // go reverse
         //multiplier = (distanceInCmBack - STOP_DISTANCE)/STOP_DISTANCE;
         motorSpeed = motorSpeed * backMultiplier;
-        turnMotorSpeed = motorSpeed-abs(joyX)*turnFactor;
+        turnMotorSpeed = motorSpeed-abs(joyX)*motorSpeed/100;
         if (motorSpeed > 0) {
 		      moveFL(3, turnMotorSpeed);
           moveFR(3, motorSpeed);
           moveBL(3, turnMotorSpeed);
           moveBR(3, motorSpeed);
         }
-        //Serial.println("Going reverse left");
-        //Serial.println(motorSpeed);
-        //Serial.println(turnMotorSpeed);
-        //Serial.println("");
+        // Serial.println("Going reverse left");
+        // Serial.println(motorSpeed);
+        // Serial.println(turnMotorSpeed);
+        // Serial.println("");
      }
       else if (joyY > 0) {  // go forward
         //multiplier = (distanceInCm - STOP_DISTANCE)/STOP_DISTANCE;
         motorSpeed = motorSpeed * fwdMultiplier;
-        turnMotorSpeed = motorSpeed-abs(joyX)*turnFactor;
+        turnMotorSpeed = motorSpeed-abs(joyX)*motorSpeed/100;
         if (motorSpeed > 0) {
           moveFL(1, turnMotorSpeed);
           moveFR(1, motorSpeed);
           moveBL(1, turnMotorSpeed);
           moveBR(1, motorSpeed);
         }
-        //Serial.println("Going fwd left");
-        //Serial.println(motorSpeed);
-        //Serial.println(turnMotorSpeed);
-        //Serial.println("");
+        // Serial.println("Going fwd left");
+        // Serial.println(motorSpeed);
+        // Serial.println(turnMotorSpeed);
+        // Serial.println("");
       }
     }
     
