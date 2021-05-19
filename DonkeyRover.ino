@@ -1,7 +1,8 @@
-//Code by Manav and Papa Gagvani
+//Code by Manav and Nikhil Gagvani
 // Code for Mega 2560
 // 06/27/2015
 // New moveAndTurn() for Donkey car
+// New serial communication with Pi - coming soon
 
 // Added encoder support 08/31/15
 
