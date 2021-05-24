@@ -2,9 +2,9 @@
 // Code for Mega 2560
 // 06/27/2015
 // New moveAndTurn() for Donkey car
-// New serial communication with Pi - coming soon
 
 // Added encoder support 08/31/15
+// Added Finalized serial support 5-23-21
 
 #include <NewPing.h>
 #include <SoftwareSerial.h>
@@ -92,7 +92,7 @@ void setup() {  // Setup runs once per reset
   // initialize serial communication @ 115200 baud:
   Serial.begin(115200);
   mySerial.begin(9600);  // Bluetooth comms
-  Serial2.begin(115200); // Pi 4 comms
+  Serial3.begin(115200); // Pi 4 comms
   //Define L298N Dual H-Bridge Motor Controller Pins
 
   pinMode(fwFR,OUTPUT);
@@ -107,6 +107,10 @@ void setup() {  // Setup runs once per reset
   pinMode(fwBL,OUTPUT);
   pinMode(rwBL,OUTPUT);
   pinMode(speedBL,OUTPUT);
+
+  // Define 5 Volt Reference pin and set it to high
+  // pinMode(50,OUTPUT);
+  // digitalWrite(50, HIGH);
   
   // Define sonar pins
   
@@ -148,12 +152,12 @@ void loop() {
   distanceInCmBack =  (distanceInCmBack + currentDistanceBack)/2;
   // Serial.println(distanceInCm);        // Debug only
   // Serial.println(distanceInCmBack);  // Debug only
-  delay(10);
-
+  delay(2);
+/*
   if(mySerial.available())  {                           // data received from BT
     delay(2);
     cmd[0] =  mySerial.read();
-    //Serial.println("Received data");  // Debug only
+    Serial.println("Received data");  // Debug only
     if(cmd[0] == STX)  {
       int i=1;      
       while(mySerial.available())
@@ -169,6 +173,7 @@ void loop() {
     }
   } 
   else moveMotors();
+  */
 /*
 
   if(Serial2.available())  {                           // data received from BT
@@ -191,27 +196,43 @@ void loop() {
   } 
   else moveMotors();
 */
-  if(Serial2.available()>7)  {                           // data received from BT
-      cmd[0] =  Serial2.read();
+  /*
+  if (Serial3.available()) {
+      char input = Serial3.read();
+      Serial.println("Serial is available, Message is");
+      Serial.println(input);
+      delay(10);
+    }
+  */
+  if(Serial3.available()>7)  {                           // data received from ser
+      cmd[0] =  Serial3.read();
       Serial.println("Received data");  // Debug only
       if(cmd[0] == STX)  {
         int i=1;      
-        while(Serial2.available() && i<8)
+        while(Serial3.available() && i<8)
         {
-          cmd[i] = Serial2.read();
+          cmd[i] = Serial3.read();
           if(cmd[i]>127 || i>7)                 break;     // Communication error
           if((cmd[i]==ETX) && (i==7))   break;     // Button or Joystick data
           i++;        
         }
         if(i==7) {
-          while (Serial2.available()) {
-            Serial2.read();
+          while (Serial3.available()) {
+            Serial3.read();
           }
           getJoystickState(cmd);     // 6 Bytes  ex: < STX "200" "180" ETX >
         }
       }
     } 
     else moveMotors();
+
+    
+
+    if (mySerial.available()) {
+      char input = mySerial.read();
+      Serial.println(input);
+      Serial.println("Above char recieved from BT");
+    }
     
   // sendBlueToothData();
   
@@ -276,10 +297,10 @@ void getJoystickState(byte data[8])    {
   joyY = y;
 
 // Your code here ...
-  Serial.print("Joystick position:  ");
-  Serial.print(joyX);  
-  Serial.print(", ");  
-  Serial.println(joyY);
+  // Serial.print("Joystick position:  ");
+  // Serial.print(joyX);  
+  // Serial.print(", ");  
+  // Serial.println(joyY);
  
 } 
 
